@@ -1,0 +1,58 @@
+name: sync
+
+# Daily: if owterminal.com serves a newer ow.mjs, open a pull request with it.
+
+on:
+  schedule:
+    - cron: "23 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+
+      - name: Download ow.mjs
+        id: fetch
+        run: |
+          curl -fsSL --retry 3 https://owterminal.com/ow.mjs -o "$RUNNER_TEMP/ow.mjs"
+          node --input-type=module --check < "$RUNNER_TEMP/ow.mjs"
+          if cmp -s "$RUNNER_TEMP/ow.mjs" ow.mjs; then
+            echo "ow.mjs is current."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            cp "$RUNNER_TEMP/ow.mjs" ow.mjs
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Open a pull request
+        if: steps.fetch.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          branch=sync/ow-mjs
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -C "$branch"
+          git add ow.mjs
+          git commit -m "Sync ow.mjs from owterminal.com"
+          git push --force origin "$branch"
+          open=$(gh pr list --head "$branch" --state open --json number --jq length)
+          if [ "$open" = "0" ]; then
+            gh pr create --base main --head "$branch" \
+              --title "Sync ow.mjs from owterminal.com" \
+              --body "owterminal.com serves a newer ow.mjs. It parses under Node 22. Add a CHANGELOG.md line before merging."
+          fi
