@@ -52,7 +52,10 @@ jobs:
           git push --force origin "$branch"
           open=$(gh pr list --head "$branch" --state open --json number --jq length)
           if [ "$open" = "0" ]; then
+            # The organization may not allow Actions to open pull requests. Then the
+            # branch is still pushed, and the run leaves a link instead of failing.
             gh pr create --base main --head "$branch" \
               --title "Sync ow.mjs from owterminal.com" \
-              --body "owterminal.com serves a newer ow.mjs. It parses under Node 22. Add a CHANGELOG.md line before merging."
+              --body "owterminal.com serves a newer ow.mjs. It parses under Node 22. Add a CHANGELOG.md line before merging." \
+              || echo "::warning::Could not open a pull request. Open one from $branch: https://github.com/${GITHUB_REPOSITORY}/compare/main...$branch"
           fi
